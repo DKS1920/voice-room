@@ -210,18 +210,33 @@ async function enterRoom(id, isCreator){
   myIdText.textContent = myId;
   myIdBox.classList.remove('hidden');
   history.replaceState(null,'','?room='+encodeURIComponent(isCreator?myId:id));
-  // Supabase: ذخیره کاربر و اتاق
+  // Supabase: ذخیره کاربر و اتاق (اگر جدول‌ها ساخته نشده باشه، گیر نکن)
   if(supaEnabled){
-    await supaEnsureUser(myName);
-    if(isCreator) await supaCreateRoom(id, id);
-    else await supaJoinRoom(id);
-    // لود تاریخچه چت از Supabase
-    const oldMsgs = await supaLoadMessages(id);
-    if(oldMsgs.length){
-      chatBox.innerHTML='';
-      oldMsgs.forEach(m=> addChatMessage(m.user_name, m.text, m.user_id===supaUserId, false));
+    try{
+      // تست سریع که جدول وجود داره یا نه - اگر 404 ، غیرفعال کن و ادامه بده
+      const test = await Promise.race([
+        supabase.from('users').select('id').limit(1),
+        new Promise((_,rej)=> setTimeout(()=>rej(new Error('timeout')), 2500))
+      ]);
+      if(test && test.error && test.error.code==='PGRST205'){
+        console.warn('Supabase tables not created yet - running in PeerJS only mode');
+        toast('⚠️ جدول‌های Supabase هنوز ساخته نشده — لطفاً supabase.sql رو در SQL Editor اجرا کن (فعلاً با PeerJS کار می‌کنه)');
+        supaEnabled = false;
+      } else {
+        await supaEnsureUser(myName);
+        if(isCreator) await supaCreateRoom(id, id);
+        else await supaJoinRoom(id);
+        const oldMsgs = await supaLoadMessages(id);
+        if(oldMsgs.length){
+          chatBox.innerHTML='';
+          oldMsgs.forEach(m=> addChatMessage(m.user_name, m.text, m.user_id===supaUserId, false));
+        }
+        supaSubscribeMessages(id);
+      }
+    }catch(e){
+      console.warn('Supabase skip',e);
+      // ادامه بده با PeerJS
     }
-    supaSubscribeMessages(id);
   }
   // مهم: قبل از Peer حتما میک را بگیر تا صدا قطع نباشد
   await ensureMic();
