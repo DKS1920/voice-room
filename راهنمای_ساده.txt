@@ -1,0 +1,25 @@
+ویس‌روم - راهنمای فوق ساده (بدون دانش فنی)
+
+فایل آماده: voice-room.zip روی دسکتاپ
+
+=== برای گرفتن لینک سایت در 1 دقیقه (بدون گیت‌هاب) ===
+1- برو به https://app.netlify.com/drop
+2- فایل voice-room.zip را بکش و داخل صفحه بنداز (Drag & Drop)
+3- بعد 3 ثانیه یک لینک مثل https://abc123.netlify.app بهت میده
+   همون لینکِ سایتته! بفرست برای دوستات و ویس بزنید.
+
+=== اگر حتما گیت‌هاب می‌خوای (3 کلیک) ===
+1- برو https://github.com/new
+   - Repository name بنویس: voice-room
+   - بزن Create repository
+2- تو صفحه جدید دکمه Add file -> Upload files را بزن
+3- محتویات پوشه را (یا خود zip را extract کن) بکش داخل و بزن Commit changes
+4- بعد برو Settings -> Pages (منوی چپ)
+   - Branch را بگذار main و Save بزن
+   - بعد 1 دقیقه لینک سایتت بالا می‌آید: https://USERNAME.github.io/voice-room/
+
+=== اجرای آفلاین بدون اینترنت (فقط خودت) ===
+- روی index.html دوبار کلیک کن
+- یا http://localhost:8000 (اگر سرور روشن باشد)
+
+پشتیبانی: هر مشکلی بود بگو تا لینک نهایی را برات بسازم.
