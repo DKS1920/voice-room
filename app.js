@@ -129,7 +129,7 @@ async function ensureMic(){
     return localStream;
   }
   try{
-    localStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true, sampleRate:48000 }, video:false });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation: { ideal: true }, noiseSuppression: { ideal: true }, autoGainControl: { ideal: true }, sampleRate: 48000, channelCount: 1, latency: { ideal: 0.01 }, googEchoCancellation: { ideal: true }, googAutoGainControl: { ideal: true }, googNoiseSuppression: { ideal: true }, googHighpassFilter: { ideal: true } }, video:false });
     console.log('mic granted', localStream.getTracks());
     isMicOn = true;
     setupAudioAnalyser(localStream);
