@@ -1,4 +1,4 @@
-// Voice Room — PeerJS Mesh + Screen Share
+// Voice Room — Fixed PeerJS Mesh + Screen Share (ویس + اسکرین بدون سیاهی)
 const $ = s => document.querySelector(s);
 const displayNameInput = $('#displayName');
 const createBtn = $('#createBtn');
@@ -33,7 +33,6 @@ const helpModal = $('#helpModal');
 const closeHelp = $('#closeHelp');
 const toastGlobal = $('#toastGlobal');
 
-// state
 let peer = null;
 let myId = null;
 let myName = 'مهمان';
@@ -43,44 +42,56 @@ let screenStream = null;
 let isMicOn = true;
 let isDeafened = false;
 let isScreenOn = false;
-const connections = new Map(); // peerId -> { conn, call, mediaCall, screenCall, name, micOn, screenOn }
+const connections = new Map();
 let audioContext, analyser;
 let speaking = false;
+let audioUnlocked = false;
 
-function genId(){
-  return 'v-' + Math.random().toString(36).slice(2,6) + '-' + Math.random().toString(36).slice(2,6);
-}
-function toast(msg){
-  toastGlobal.textContent = msg;
-  toastGlobal.classList.add('show');
-  setTimeout(()=>toastGlobal.classList.remove('show'),2200);
-}
-function showCopyToast(){
-  copyToast.classList.add('show');
-  setTimeout(()=>copyToast.classList.remove('show'),1400);
-}
-async function copyText(t){
-  try{ await navigator.clipboard.writeText(t); toast('کپی شد ✓'); showCopyToast(); }catch{ toast('کپی نشد، دستی کپی کن'); }
-}
+function genId(){ return 'v-' + Math.random().toString(36).slice(2,6) + '-' + Math.random().toString(36).slice(2,6); }
+function toast(msg){ toastGlobal.textContent = msg; toastGlobal.classList.add('show'); setTimeout(()=>toastGlobal.classList.remove('show'),2600); console.log('[toast]',msg); }
+function showCopyToast(){ copyToast.classList.add('show'); setTimeout(()=>copyToast.classList.remove('show'),1400); }
+async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast('کپی شد ✓'); showCopyToast(); }catch{ toast('کپی نشد، دستی کپی کن: '+t); } }
 function getName(){ return displayNameInput.value.trim() || 'مهمان-' + Math.floor(Math.random()*900+100) }
+function updateCounts(){ const n = connections.size + 1; peerCount.textContent = n + ' نفر آنلاین'; sideCount.textContent = n; }
 
-function updateCounts(){
-  const n = connections.size + 1;
-  peerCount.textContent = n + ' نفر آنلاین';
-  sideCount.textContent = n;
+// unlock audio on first interaction (برای رفع بلاک autoplay)
+function unlockAudio(){
+  if(audioUnlocked) return;
+  audioUnlocked = true;
+  document.querySelectorAll('audio').forEach(a=>{
+    a.muted = isDeafened;
+    a.play().catch(()=>{});
+  });
+  document.querySelectorAll('video').forEach(v=> v.play().catch(()=>{}));
+  if(audioContext && audioContext.state==='suspended') audioContext.resume().catch(()=>{});
 }
+document.addEventListener('click', unlockAudio, {once:false});
+document.addEventListener('touchend', unlockAudio, {once:false});
 
-// Peer setup
 async function ensureMic(){
-  if(localStream) return localStream;
+  if(localStream) {
+    localStream.getAudioTracks().forEach(t=> t.enabled = isMicOn);
+    return localStream;
+  }
   try{
-    localStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video:false });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true, sampleRate:48000 }, video:false });
+    console.log('mic granted', localStream.getTracks());
     isMicOn = true;
     setupAudioAnalyser(localStream);
+    // اگر قبلاً به کسی وصل بودیم ولی بدون میک، حالا استریم را جایگزین کن (renegotiate با reconnect ساده)
+    connections.forEach((entry,pid)=>{
+      if(entry.call) {
+        try{
+          // برای ساده‌سازی: تماس جدید بزن
+          const newCall = peer.call(pid, localStream, { metadata:{ type:'voice' } });
+          handleMediaCall(newCall);
+        }catch(e){ console.warn('re-call failed',e); }
+      }
+    });
     return localStream;
   }catch(e){
-    toast('دسترسی میکروفون رد شد — بدون میک دسترسی ادامه می‌دهیم');
-    // create empty audio track? continue without mic
+    console.error('mic error',e);
+    toast('دسترسی میکروفون رد شد — روی Allow بزن و رفرش کن. بدون میک صدات نمیره.');
     localStream = null;
     return null;
   }
@@ -103,88 +114,103 @@ function setupAudioAnalyser(stream){
       requestAnimationFrame(tick);
     }
     tick();
-  }catch{}
+    if(audioContext.state==='suspended') audioContext.resume();
+  }catch(e){ console.warn('analyser fail',e); }
 }
 
 function initPeer(id){
   return new Promise((resolve,reject)=>{
-    const p = new Peer(id, { debug: 1 });
-    p.on('open', oid=> resolve(p));
-    p.on('error', err=>{
-      console.error(err);
-      if(err.type==='unavailable-id'){ toast('این شناسه قبلاً استفاده شده — یکی دیگر بساز'); }
-      else toast('خطا: '+ err.type);
+    const p = new Peer(id, {
+      debug: 1,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          // TURN رایگان برای عبور از NAT سخت
+          { urls: 'turn:openrelay.metered.ca:80', username:'openrelayproject', credential:'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject' }
+        ]
+      }
     });
+    p.on('open', oid=> { console.log('peer open',oid); resolve(p); });
+    p.on('error', err=>{
+      console.error('peer error',err);
+      if(err.type==='unavailable-id'){ toast('این شناسه قبلاً استفاده شده — یکی دیگر بساز'); }
+      else if(err.type==='peer-unavailable'){ toast('شناسه یافت نشد — مطمئن شو طرف مقابل اتاق را ساخته'); }
+      else toast('خطا: '+ (err.message||err.type));
+    });
+    p.on('disconnected', ()=>{ console.log('peer disconnected, reconnecting'); try{ p.reconnect(); }catch{} });
   });
 }
 
 async function enterRoom(id, isCreator){
   myName = getName();
   roomId = id;
-  myId = id; // for creator, peer id == room id. For joiner, we generate unique id
-  if(!isCreator){
-    myId = id + '-' + Math.random().toString(36).slice(2,5);
-  }
-  // persist name
+  myId = isCreator ? id : id + '-' + Math.random().toString(36).slice(2,5);
   localStorage.setItem('vr_name', myName);
-
   lobby.classList.add('hidden');
   room.classList.remove('hidden');
   roomIdDisplay.textContent = isCreator ? myId : id;
   myIdText.textContent = myId;
   myIdBox.classList.remove('hidden');
   history.replaceState(null,'','?room='+encodeURIComponent(isCreator?myId:id));
-
+  // مهم: قبل از Peer حتما میک را بگیر تا صدا قطع نباشد
   await ensureMic();
+  unlockAudio();
   peer = await initPeer(myId);
   myIdText.textContent = peer.id;
   roomIdDisplay.textContent = isCreator ? peer.id : id;
-
   attachPeerHandlers();
   renderParticipants();
   updateCounts();
-
   if(!isCreator){
-    // connect to room host
+    toast('در حال اتصال به '+id+' ...');
     await connectToPeer(id);
+    // برای دیباگ: اگر بعد 3 ثانیه هنوز وصل نشد
+    setTimeout(()=>{
+      if(connections.size===0) toast('وصل نشد — مطمئن شو سازنده آنلاین است و شناسه درست است');
+    }, 3500);
+  } else {
+    toast('اتاق ساخته شد — لینک را بفرست');
   }
-  toast(isCreator ? 'اتاق ساخته شد — لینک را بفرست' : 'وصل شدی ✓');
 }
 
 function attachPeerHandlers(){
-  peer.on('connection', conn=>{
-    handleDataConnection(conn);
-  });
+  peer.on('connection', conn=> handleDataConnection(conn));
   peer.on('call', async call=>{
-    // incoming media call
     const peerId = call.peer;
-    // answer with appropriate stream
+    console.log('incoming call', peerId, call.metadata);
     if(call.metadata && call.metadata.type==='screen'){
-      // screen call — answer without stream, just receive
-      call.answer();
+      call.answer(); // بدون استریم، فقط دریافت
       call.on('stream', stream=>{
+        console.log('screen stream received', peerId, stream.getTracks());
+        if(!stream.getVideoTracks().length) {
+          console.warn('screen stream has no video track');
+          toast('اسکرین بدون ویدیو دریافت شد');
+        }
         addScreenStream(peerId, stream, getPeerName(peerId));
       });
-      // track
+      call.on('close', ()=> removeScreenStream(peerId));
+      call.on('error', e=> { console.error('screen call error',e); removeScreenStream(peerId); });
       if(!connections.has(peerId)) connections.set(peerId,{});
       const c = connections.get(peerId);
       c.screenCall = call;
       c.screenOn = true;
-      call.on('close', ()=> removeScreenStream(peerId));
     } else {
-      // voice call
+      // voice
       try{ await ensureMic(); }catch{}
+      console.log('answering voice call with', localStream);
       call.answer(localStream || undefined);
       handleMediaCall(call);
     }
-    // if new peer, also connect data to exchange peers
-    if(!connections.has(peerId) || !connections.get(peerId).conn){
-      const dc = peer.connect(peerId, { reliable:true });
-      handleDataConnection(dc);
+    if(!connections.has(peerId) || !connections.get(peerId).conn || !connections.get(peerId).conn.open){
+      try{
+        const dc = peer.connect(peerId, { reliable:true });
+        handleDataConnection(dc);
+      }catch(e){ console.warn('data connect fail',e); }
     }
   });
-  peer.on('disconnected', ()=>{ peer.reconnect(); });
-  peer.on('close', ()=>{ toast('ارتباط قطع شد'); });
 }
 
 function handleDataConnection(conn){
@@ -194,10 +220,19 @@ function handleDataConnection(conn){
   entry.conn = conn;
   entry.name = entry.name || peerId.slice(0,8);
   conn.on('open', ()=>{
-    // handshake: send my info + peer list
+    console.log('data open',peerId);
     conn.send({ t:'hello', name: myName, micOn:isMicOn, screenOn:isScreenOn, peers: [...connections.keys(), peer.id] });
-    conn.send({ t:'chat', system:true, text: myName + ' وارد شد' });
-    // mesh: auto connect to peers that this new peer knows but we don't
+    // اگر من در حال اسکرین هستم، به تازه‌وارد هم بفرست (رفع سیاهی برای ورودی جدید)
+    if(isScreenOn && screenStream){
+      setTimeout(()=>{
+        try{
+          console.log('sending screen to newcomer',peerId);
+          const sCall = peer.call(peerId, screenStream, { metadata:{ type:'screen' } });
+          sCall.on('error', e=> console.error('screen to newcomer error',e));
+          entry.screenCallOut = sCall;
+        }catch(e){ console.error(e); }
+      }, 400);
+    }
     updateCounts(); renderParticipants();
   });
   conn.on('data', data=>{
@@ -206,16 +241,16 @@ function handleDataConnection(conn){
       entry.name = data.name || entry.name;
       entry.micOn = data.micOn;
       entry.screenOn = data.screenOn;
-      // mesh discovery
       if(data.peers && Array.isArray(data.peers)){
         data.peers.forEach(pid=>{
           if(pid===peer.id) return;
           if(pid===peerId) return;
-          if(connections.has(pid)) return;
-          // connect to discovered peer
+          if(connections.has(pid) && connections.get(pid).conn && connections.get(pid).conn.open) return;
+          console.log('mesh discover',pid);
           connectToPeer(pid);
         });
       }
+      // اگر طرف مقابل در حال اسکرین است ولی ما هنوز استریم نداریم، چیزی نفرست — او خودش برای ما call می‌زند (در open خودش)
       renderParticipants();
     } else if(data.t==='update'){
       if('micOn' in data) entry.micOn = data.micOn;
@@ -224,58 +259,66 @@ function handleDataConnection(conn){
       renderParticipants();
     } else if(data.t==='chat'){
       addChatMessage(data.name||entry.name, data.text, false, data.system);
-    } else if(data.t==='peers'){
-      data.list.forEach(pid=>{ if(pid!==peer.id && !connections.has(pid)) connectToPeer(pid); });
     }
   });
-  conn.on('close', ()=>{ handlePeerLeave(peerId); });
-  conn.on('error', ()=>{ handlePeerLeave(peerId); });
+  conn.on('close', ()=>{ console.log('data close',peerId); handlePeerLeave(peerId); });
+  conn.on('error', (e)=>{ console.error('data error',peerId,e); handlePeerLeave(peerId); });
 }
 
 function handleMediaCall(call){
   const peerId = call.peer;
   if(!connections.has(peerId)) connections.set(peerId,{});
   const entry = connections.get(peerId);
+  // اگر کال قبلی بود ببند
+  if(entry.call && entry.call !== call) { try{ entry.call.close(); }catch{} }
   entry.call = call;
   call.on('stream', stream=>{
+    console.log('voice stream from',peerId, stream.getAudioTracks());
     entry.stream = stream;
     attachAudio(peerId, stream);
     renderParticipants();
+    toast('ویس '+getPeerName(peerId)+' وصل شد ✓');
+    unlockAudio();
   });
-  call.on('close', ()=>{ removeAudio(peerId); });
-  call.on('error', ()=>{ removeAudio(peerId); });
+  call.on('close', ()=>{ console.log('voice call close',peerId); removeAudio(peerId); });
+  call.on('error', (e)=>{ console.error('voice call error',peerId,e); toast('خطای ویس با '+getPeerName(peerId)); removeAudio(peerId); });
 }
 
 async function connectToPeer(peerId){
   if(!peer || !peerId || peerId===peer.id) return;
-  if(connections.has(peerId) && connections.get(peerId).conn && connections.get(peerId).conn.open) return;
-  // data
+  const existing = connections.get(peerId);
+  if(existing && existing.conn && existing.conn.open) {
+    console.log('already connected',peerId);
+    return;
+  }
+  console.log('connectToPeer',peerId);
   const conn = peer.connect(peerId, { reliable:true });
   handleDataConnection(conn);
-  // media
   await ensureMic();
+  // کمی صبر برای open شدن data قبل از call
+  await new Promise(r=> setTimeout(r, 300));
   if(localStream){
-    const call = peer.call(peerId, localStream, { metadata:{ type:'voice' } });
-    handleMediaCall(call);
+    try{
+      const call = peer.call(peerId, localStream, { metadata:{ type:'voice' } });
+      if(call) handleMediaCall(call);
+      else console.warn('peer.call returned null',peerId);
+    }catch(e){ console.error('call failed',e); toast('تماس صوتی برقرار نشد'); }
   } else {
-    // call without stream? need at least empty, so skip?
-    // create dummy: still call to signal presence
-    const call = peer.call(peerId, undefined);
-    if(call) handleMediaCall(call);
+    console.warn('no localStream, skipping voice call');
+    toast('میکروفون نداری — صدات نمیره، ولی صدای بقیه را می‌شنوی');
   }
-  // if we are screen sharing, also call with screen
-  if(screenStream){
-    const sCall = peer.call(peerId, screenStream, { metadata:{ type:'screen' } });
-    sCall.on('close', ()=>{});
-    if(!connections.has(peerId)) connections.set(peerId,{});
-    connections.get(peerId).screenCallOut = sCall;
+  if(screenStream && isScreenOn){
+    try{
+      const sCall = peer.call(peerId, screenStream, { metadata:{ type:'screen' } });
+      sCall.on('error', e=> console.error('screen call error',e));
+      if(!connections.has(peerId)) connections.set(peerId,{});
+      connections.get(peerId).screenCallOut = sCall;
+      console.log('screen call to',peerId);
+    }catch(e){ console.error('screen call fail',e); }
   }
 }
 
-function getPeerName(pid){
-  const e = connections.get(pid);
-  return e?.name || pid.slice(0,8);
-}
+function getPeerName(pid){ const e = connections.get(pid); return e?.name || pid.slice(0,8); }
 
 function attachAudio(peerId, stream){
   let el = document.getElementById('audio-'+peerId);
@@ -284,13 +327,29 @@ function attachAudio(peerId, stream){
     el.id = 'audio-'+peerId;
     el.autoplay = true;
     el.playsInline = true;
+    el.controls = false;
     el.style.display='none';
     document.body.appendChild(el);
   }
   el.srcObject = stream;
   el.muted = isDeafened;
-  el.play().catch(()=>{});
-  // simple speaking detection for remote? use audio element volume?
+  el.volume = 1.0;
+  // برای دیباگ: اگر استریم بی‌صدا بود
+  const tracks = stream.getAudioTracks();
+  console.log('attachAudio',peerId,'tracks',tracks.map(t=> `${t.label} enabled=${t.enabled} muted=${t.muted}`));
+  if(tracks.length===0) toast('صدایی از '+getPeerName(peerId)+' دریافت نشد (میک او خاموش است)');
+  // تلاش برای پخش
+  const playPromise = el.play();
+  if(playPromise) playPromise.then(()=> console.log('audio play ok',peerId)).catch(e=>{
+    console.warn('audio play blocked',e);
+    toast('برای شنیدن صدا یک بار روی صفحه کلیک کن');
+    // منتظر کلیک بمان
+    const onClick = ()=>{
+      el.play().catch(()=>{});
+      document.removeEventListener('click', onClick);
+    };
+    document.addEventListener('click', onClick);
+  });
 }
 
 function removeAudio(peerId){
@@ -299,6 +358,7 @@ function removeAudio(peerId){
 }
 
 function addScreenStream(peerId, stream, name){
+  console.log('addScreenStream',peerId, stream);
   let card = document.getElementById('screen-'+peerId);
   if(!card){
     card = document.createElement('div');
@@ -310,13 +370,38 @@ function addScreenStream(peerId, stream, name){
   }
   card.querySelector('span').textContent = name + ' — اشتراک صفحه';
   const v = card.querySelector('video');
+  v.autoplay = true;
+  v.playsInline = true;
+  v.muted = false;
+  v.controls = false;
+  v.style.background = '#000';
   v.srcObject = stream;
-  v.play().catch(()=>{});
-  v.onloadedmetadata = ()=> v.play();
-  stream.getTracks().forEach(t=> t.onended = ()=> removeScreenStream(peerId));
+  // force play
+  v.onloadedmetadata = ()=>{
+    console.log('screen video metadata loaded',peerId, v.videoWidth, v.videoHeight);
+    v.play().then(()=> console.log('screen play ok',peerId)).catch(e=> {
+      console.warn('screen play blocked',e);
+      v.muted = true;
+      v.play().catch(()=>{});
+      toast('برای دیدن اسکرین یک بار کلیک کن');
+    });
+  };
+  // اگر قبلاً metadata لود شده بود
+  if(v.readyState >= 1) v.play().catch(()=>{});
+  // در صورت سیاه بودن، لاگ ترک‌ها
+  const vTracks = stream.getVideoTracks();
+  console.log('screen video tracks', vTracks.map(t=> `${t.label} readyState=${t.readyState} enabled=${t.enabled} muted=${t.muted}`));
+  if(vTracks.length===0) toast('اسکرین بدون تصویر دریافت شد');
+  // اگر ترک ended شد حذف کن
+  stream.getTracks().forEach(t=> t.onended = ()=> { console.log('screen track ended',peerId); removeScreenStream(peerId); });
+  vTracks.forEach(t=> t.onmute = ()=> console.log('track mute',peerId));
+  vTracks.forEach(t=> t.onunmute = ()=> console.log('track unmute',peerId));
+
   const e = connections.get(peerId);
   if(e){ e.screenStream = stream; e.screenOn = true; }
   renderParticipants();
+  // رفع سیاهی با کمی تاخیر: بعضی مرورگرها اول سیاه می‌مونن
+  setTimeout(()=> { v.play().catch(()=>{}); }, 300);
 }
 
 function removeScreenStream(peerId){
@@ -335,12 +420,13 @@ function addMyScreenCard(){
       card = document.createElement('div');
       card.id='screen-mine';
       card.className='screen-card';
-      card.innerHTML=`<video autoplay playsinline muted></video><div class="label"><i class="fa-solid fa-display"></i> <span>صفحه تو</span></div>`;
+      card.innerHTML=`<video autoplay playsinline muted></video><div class="label"><i class="fa-solid fa-display"></i> <span>صفحه تو (پیش‌نمایش)</span></div>`;
       screenGrid.prepend(card);
       screenGrid.classList.remove('hidden');
     }
     const v = card.querySelector('video');
     v.srcObject = screenStream;
+    v.muted = true;
     v.play().catch(()=>{});
   } else {
     if(card) card.remove();
@@ -349,11 +435,8 @@ function addMyScreenCard(){
 }
 
 function renderParticipants(){
-  // main grid + member list
   participantsGrid.innerHTML='';
   memberList.innerHTML='';
-
-  // me
   const meCard = document.createElement('div');
   meCard.className='p-card' + (speaking ? ' speaking':'');
   meCard.innerHTML=`
@@ -364,14 +447,12 @@ function renderParticipants(){
     ${isScreenOn?'<span class="badge screen-on"><i class="fa-solid fa-display"></i> صفحه</span>':''}
   `;
   participantsGrid.appendChild(meCard);
-
   const meLi = document.createElement('li');
   meLi.innerHTML=`<div class="m-avatar">${myName.slice(0,1).toUpperCase()}</div><div class="m-info"><b>${myName} (تو)</b><span>${isMicOn?'میک روشن':'میک بسته'}</span></div><span class="m-status ${isMicOn?'on':'off'}">${isMicOn?'●': '○'}</span>`;
   memberList.appendChild(meLi);
-
   connections.forEach((entry, pid)=>{
     const name = entry.name || pid.slice(0,8);
-    const micOn = entry.micOn !== false; // default true
+    const micOn = entry.micOn !== false;
     const hasScreen = !!entry.screenOn;
     const card = document.createElement('div');
     card.className='p-card';
@@ -383,7 +464,6 @@ function renderParticipants(){
       ${hasScreen?'<span class="badge screen-on"><i class="fa-solid fa-display"></i> صفحه</span>':''}
     `;
     participantsGrid.appendChild(card);
-
     const li = document.createElement('li');
     li.innerHTML=`<div class="m-avatar">${name.slice(0,1).toUpperCase()}</div><div class="m-info"><b>${name}</b><span>${micOn?'میک روشن':'میک بسته'}${hasScreen?' • صفحه':''}</span></div><span class="m-status ${micOn?'on':'off'}">${micOn?'●':'○'}</span>`;
     li.title = pid;
@@ -400,6 +480,7 @@ function handlePeerLeave(pid){
     try{ e.conn && e.conn.close(); }catch{}
     try{ e.call && e.call.close(); }catch{}
     try{ e.screenCall && e.screenCall.close(); }catch{}
+    try{ e.screenCallOut && e.screenCallOut.close(); }catch{}
     removeAudio(pid);
     removeScreenStream(pid);
     connections.delete(pid);
@@ -437,7 +518,6 @@ function broadcastChat(text){
   connections.forEach(e=>{ try{ e.conn && e.conn.open && e.conn.send({ t:'chat', name:myName, text }); }catch{} });
 }
 
-// Actions
 createBtn.onclick = async ()=>{
   if(!displayNameInput.value.trim()){ displayNameInput.focus(); toast('اول نامت را وارد کن'); return; }
   const id = genId();
@@ -473,17 +553,19 @@ micBtn.onclick = toggleMic;
 function toggleMic(){
   isMicOn = !isMicOn;
   if(localStream) localStream.getAudioTracks().forEach(t=> t.enabled = isMicOn);
+  else if(isMicOn) ensureMic();
   micBtn.classList.toggle('off', !isMicOn);
   micBtn.classList.toggle('on', isMicOn);
   micBtn.querySelector('span').textContent = isMicOn ? 'میکروفون روشن' : 'میکروفون بسته';
   micBtn.querySelector('i').className = isMicOn ? 'fa-solid fa-microphone' : 'fa-solid fa-microphone-slash';
   broadcastUpdate(); renderParticipants();
+  toast(isMicOn? 'میکروفون روشن':'میکروفون بسته');
 }
 deafenBtn.onclick = ()=>{
   isDeafened = !isDeafened;
   deafenBtn.classList.toggle('active', isDeafened);
   deafenBtn.querySelector('span').textContent = isDeafened ? 'صدا قطع' : 'صدا روشن';
-  document.querySelectorAll('audio').forEach(a=> a.muted = isDeafened);
+  document.querySelectorAll('audio').forEach(a=> { a.muted = isDeafened; if(!isDeafened) a.play().catch(()=>{}); });
   toast(isDeafened ? 'صدای دیگران قطع شد' : 'صدای دیگران وصل شد');
 };
 screenBtn.onclick = toggleScreen;
@@ -492,23 +574,34 @@ async function toggleScreen(){
     stopScreen();
   } else {
     try{
-      screenStream = await navigator.mediaDevices.getDisplayMedia({ video:{ displaySurface:'monitor' }, audio:true });
+      // تلاش با صدا، اگر نشد فقط ویدیو
+      try{
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video:{ displaySurface:'monitor' }, audio:true });
+      }catch{
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:false });
+      }
+      console.log('screenStream', screenStream.getTracks());
+      const vTracks = screenStream.getVideoTracks();
+      if(!vTracks.length) throw new Error('no video track');
       isScreenOn = true;
       screenBtn.classList.add('active');
       screenBtn.querySelector('span').textContent='توقف اشتراک';
       addMyScreenCard();
-      // call all peers with screen
       connections.forEach((_, pid)=>{
-        const call = peer.call(pid, screenStream, { metadata:{ type:'screen' } });
-        const entry = connections.get(pid);
-        if(entry) entry.screenCallOut = call;
+        try{
+          const call = peer.call(pid, screenStream, { metadata:{ type:'screen' } });
+          call.on('error', e=> console.error('screen call error',e));
+          const entry = connections.get(pid);
+          if(entry) entry.screenCallOut = call;
+        }catch(e){ console.error(e); }
       });
       broadcastUpdate(); renderParticipants();
       toast('اشتراک صفحه شروع شد');
-      screenStream.getVideoTracks()[0].onended = stopScreen;
+      vTracks[0].onended = stopScreen;
+      screenStream.getTracks().forEach(t=> t.onended = stopScreen);
     }catch(e){
-      toast('اشتراک صفحه لغو شد');
-      console.error(e);
+      console.error('getDisplayMedia fail',e);
+      toast('اشتراک صفحه لغو شد: '+(e.message||''));
     }
   }
 }
@@ -518,7 +611,6 @@ function stopScreen(){
   screenBtn.querySelector('span').textContent='اشتراک صفحه';
   if(screenStream){ screenStream.getTracks().forEach(t=> t.stop()); screenStream=null; }
   addMyScreenCard();
-  // close outgoing screen calls
   connections.forEach(e=>{ try{ e.screenCallOut && e.screenCallOut.close(); }catch{} e.screenCallOut=null; });
   broadcastUpdate(); renderParticipants();
 }
@@ -535,7 +627,7 @@ chatInput.addEventListener('keydown', e=>{ if(e.key==='Enter') sendChat(); });
 
 async function leaveRoom(){
   if(screenStream) stopScreen();
-  if(localStream) localStream.getTracks().forEach(t=> t.stop());
+  if(localStream) { localStream.getTracks().forEach(t=> t.stop()); localStream=null; }
   connections.forEach((_,pid)=> handlePeerLeave(pid));
   connections.clear();
   if(peer){ try{ peer.destroy(); }catch{} peer=null; }
@@ -548,29 +640,27 @@ async function leaveRoom(){
 leaveBtn.onclick = leaveRoom;
 endBtn.onclick = leaveRoom;
 
-// keyboard shortcuts
 document.addEventListener('keydown', e=>{
   if(room.classList.contains('hidden')) return;
   if(e.key==='m' || e.key==='M' || e.key==='م'){ toggleMic(); }
   if(e.key==='s' || e.key==='S' || e.key==='س'){ toggleScreen(); }
 });
 
-// help
 helpBtn.onclick = (e)=>{ e.preventDefault(); helpModal.classList.remove('hidden'); };
 closeHelp.onclick = ()=> helpModal.classList.add('hidden');
 helpModal.onclick = (e)=>{ if(e.target===helpModal) helpModal.classList.add('hidden'); };
 
-// auto-fill name & room from URL/localStorage
 const savedName = localStorage.getItem('vr_name');
 if(savedName) displayNameInput.value = savedName;
 const params = new URLSearchParams(location.search);
 const roomParam = params.get('room');
 if(roomParam) roomInput.value = roomParam;
-
-// persist name on change
 displayNameInput.addEventListener('input', ()=> localStorage.setItem('vr_name', displayNameInput.value));
-
-// warn before unload if in room
 window.addEventListener('beforeunload', e=>{
   if(!room.classList.contains('hidden')){ e.preventDefault(); e.returnValue=''; }
 });
+
+// دیباگ کمک: لاگ HTTPS
+if(location.protocol!=='https:' && location.hostname!=='localhost' && location.hostname!=='127.0.0.1'){
+  console.warn('getUserMedia needs HTTPS, current:', location.protocol);
+}
