@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ویس‌روم | گفتگوی صوتی + اشتراک صفحه</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg-blur"></div>
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon"><i class="fa-solid fa-waveform"></i></div>
+    <div>
+      <h1>ویس‌روم</h1>
+      <span>Voice + Screen Share</span>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span class="status-dot"><i></i> آنلاین</span>
+    <a href="#" id="helpBtn" class="help-btn"><i class="fa-regular fa-circle-question"></i> راهنما</a>
+  </div>
+</header>
+
+<main class="container">
+  <!-- LOBBY -->
+  <section id="lobby" class="card lobby">
+    <div class="lobby-grid">
+      <div class="lobby-right">
+        <h2>یک اتاق صوتی بساز یا وارد شو</h2>
+        <p class="desc">بدون ثبت‌نام، مستقیم با لینک یا شناسه به ویس وصل شو. صدای باکیفیت + اشتراک صفحه با یک کلیک.</p>
+        
+        <div class="form-group">
+          <label><i class="fa-regular fa-user"></i> نام نمایشی</label>
+          <input id="displayName" type="text" placeholder="مثلاً سامان" maxlength="20" value="">
+        </div>
+
+        <div class="cards-row">
+          <div class="mini-card create">
+            <h3><i class="fa-solid fa-plus"></i> ساخت اتاق جدید</h3>
+            <p>یک شناسه اختصاصی برای تو ساخته می‌شود</p>
+            <button id="createBtn" class="btn primary"><i class="fa-solid fa-bolt"></i> ساخت اتاق</button>
+          </div>
+          <div class="mini-card join">
+            <h3><i class="fa-solid fa-right-to-bracket"></i> ورود به اتاق</h3>
+            <p>شناسه‌ای که دوستت فرستاده را وارد کن</p>
+            <div class="join-row">
+              <input id="roomInput" type="text" placeholder="مثلاً v-room-82a3">
+              <button id="joinBtn" class="btn secondary">ورود</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="myIdBox" class="my-id hidden">
+          <div class="my-id-head">
+            <span><i class="fa-solid fa-id-badge"></i> شناسه شما</span>
+            <button id="copyIdBtn" class="icon-btn" title="کپی"><i class="fa-regular fa-copy"></i></button>
+          </div>
+          <code id="myIdText">---</code>
+          <small>این شناسه را برای دوستانت بفرست تا به تو وصل شوند. هر کسی با وارد کردن همین شناسه می‌تواند به ویس اضافه شود.</small>
+          <div class="share-row">
+            <button id="shareBtn" class="btn ghost small"><i class="fa-solid fa-share-nodes"></i> اشتراک‌گذاری لینک</button>
+            <span id="copyToast" class="toast">کپی شد!</span>
+          </div>
+        </div>
+
+        <div class="tips">
+          <h4><i class="fa-solid fa-lightbulb"></i> نکات</h4>
+          <ul>
+            <li>برای اتاق گروهی: همه باید شناسه <b>سازنده اتاق</b> را وارد کنند و «ورود» بزنند.</li>
+            <li>بعد از اتصال، هر فرد جدید به صورت خودکار به بقیه هم وصل می‌شود (Mesh).</li>
+            <li>اشتراک صفحه برای همه اعضا قابل نمایش است.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="lobby-left">
+        <div class="preview-card">
+          <div class="preview-head">
+            <span><i class="fa-solid fa-headset"></i> پیش‌نمایش ویس</span>
+            <span class="live"><i></i> LIVE</span>
+          </div>
+          <div class="preview-avatars">
+            <div class="av"><img src="https://i.pravatar.cc/100?img=11"><span class="mic on"><i class="fa-solid fa-microphone"></i></span><b>تو</b></div>
+            <div class="av"><img src="https://i.pravatar.cc/100?img=32"><span class="mic off"><i class="fa-solid fa-microphone-slash"></i></span><b>سارا</b></div>
+            <div class="av"><img src="https://i.pravatar.cc/100?img=15"><span class="mic on"><i class="fa-solid fa-microphone"></i></span><b>علی</b></div>
+            <div class="av screen"><i class="fa-solid fa-display"></i><b>اشتراک صفحه</b></div>
+          </div>
+          <div class="wave">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <ul class="features">
+            <li><i class="fa-solid fa-check"></i> صدای شفاف با نویزگیری</li>
+            <li><i class="fa-solid fa-check"></i> اشتراک صفحه با صدا</li>
+            <li><i class="fa-solid fa-check"></i> چت متنی حین ویس</li>
+            <li><i class="fa-solid fa-check"></i> بدون نیاز به نصب</li>
+          </ul>
+        </div>
+        <div class="perm-box" id="permBox">
+          <i class="fa-solid fa-shield-halved"></i>
+          <div>
+            <b>دسترسی میکروفون لازم است</b>
+            <p>مرورگر از شما اجازه میکروفون می‌خواهد. برای اشتراک صفحه هم اجازه Screen را تایید کنید.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROOM -->
+  <section id="room" class="room hidden">
+    <div class="room-top">
+      <div class="room-info">
+        <h2><i class="fa-solid fa-users"></i> اتاق: <code id="roomIdDisplay">---</code></h2>
+        <span id="peerCount">1 نفر آنلاین</span>
+      </div>
+      <div class="room-actions">
+        <button id="copyRoomBtn" class="btn ghost small"><i class="fa-regular fa-copy"></i> کپی شناسه اتاق</button>
+        <button id="leaveBtn" class="btn danger small"><i class="fa-solid fa-right-from-bracket"></i> خروج</button>
+      </div>
+    </div>
+
+    <div class="room-layout">
+      <div class="main-panel">
+        <div id="screenGrid" class="screen-grid hidden">
+          <!-- screen shares inserted here -->
+        </div>
+        <div id="participantsGrid" class="participants-grid">
+          <!-- participants -->
+        </div>
+
+        <!-- add peer quick connect -->
+        <div class="quick-join">
+          <i class="fa-solid fa-link"></i>
+          <input id="quickPeerInput" type="text" placeholder="شناسه دوست را وارد کن و Enter بزن تا اضافه شود...">
+          <button id="quickCallBtn" class="btn primary small">اتصال</button>
+        </div>
+
+        <div class="controls">
+          <button id="micBtn" class="ctrl-btn mic on" title="میکروفون">
+            <i class="fa-solid fa-microphone"></i>
+            <span>میکروفون روشن</span>
+          </button>
+          <button id="screenBtn" class="ctrl-btn screen" title="اشتراک صفحه">
+            <i class="fa-solid fa-display"></i>
+            <span>اشتراک صفحه</span>
+          </button>
+          <button id="deafenBtn" class="ctrl-btn deafen" title="قطع صدای دیگران">
+            <i class="fa-solid fa-headphones"></i>
+            <span>صدا روشن</span>
+          </button>
+          <button id="endBtn" class="ctrl-btn end" title="خروج">
+            <i class="fa-solid fa-phone-slash"></i>
+          </button>
+        </div>
+        <p class="hint">کلید <b>M</b> برای میوت، <b>S</b> برای اشتراک صفحه</p>
+      </div>
+
+      <aside class="side-panel">
+        <div class="side-card">
+          <h3><i class="fa-solid fa-users-viewfinder"></i> اعضا (<span id="sideCount">1</span>)</h3>
+          <ul id="memberList" class="member-list"></ul>
+        </div>
+        <div class="side-card chat">
+          <h3><i class="fa-regular fa-message"></i> چت اتاق</h3>
+          <div id="chatBox" class="chat-box">
+            <div class="chat-empty">هنوز پیامی نیست — اولین پیام را بفرست!</div>
+          </div>
+          <div class="chat-input">
+            <input id="chatInput" type="text" placeholder="پیام بنویس و Enter بزن...">
+            <button id="chatSendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<!-- Help Modal -->
+<div id="helpModal" class="modal hidden">
+  <div class="modal-card">
+    <button id="closeHelp" class="close"><i class="fa-solid fa-xmark"></i></button>
+    <h3><i class="fa-solid fa-circle-info"></i> راهنمای استفاده</h3>
+    <ol>
+      <li>نامت را وارد کن و <b>ساخت اتاق</b> را بزن. یک شناسه مثل <code>v-xxxx</code> ساخته می‌شود.</li>
+      <li>لینک یا شناسه را برای دوستانت بفرست.</li>
+      <li>آنها شناسه را در بخش <b>ورود به اتاق</b> وارد کنند.</li>
+      <li>بعد از اتصال، میکروفون به صورت خودکار روشن است. با دکمه‌ها میوت یا اشتراک صفحه را فعال کن.</li>
+      <li>برای گروه 3+ نفره: همه به شناسه سازنده وصل شوند — سیستم به صورت Mesh همه را به هم وصل می‌کند.</li>
+    </ol>
+    <p class="note">این نسخه از PeerJS Cloud (رایگان) برای سیگنالینگ استفاده می‌کند. برای استفاده سازمانی می‌توانی سرور PeerJS اختصاصی جایگزین کنی.</p>
+  </div>
+</div>
+
+<div id="toastGlobal" class="toast-global"></div>
+
+<script src="https://unpkg.com/peerjs@1.5.3/dist/peerjs.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
