@@ -1,7 +1,5 @@
-// Supabase config - این دو مقدار را از Supabase پر کن
-// Project Settings -> API -> Project URL + anon public key
-const SUPABASE_URL = "https://YOUR_PROJECT.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE";
-
-// اگر این دو مقدار پر نشود، سایت با PeerJS + local کار می‌کند (بدون DB)
-// بعد از پر کردن، چت و اتاق‌ها روی Supabase ذخیره می‌شود
+// Supabase config - وصل شد به پروژه ukrfyngbznpneqgamhrb
+const SUPABASE_URL = "https://ukrfyngbznpneqgamhrb.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrcmZ5bmdiem5wbmVxZ2FtaHJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwNzk1NjksImV4cCI6MjEwNTY1NTU2OX0.sz53PDi-ovVWi8DnH665budct4B3RHLw0MwK1VzOsV8";
+// publishable key جدید (جایگزین anon در نسخه جدید Supabase)
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_uM08_I6u8ZRw8fx_1tXPnA_ba9tp-Q9";
