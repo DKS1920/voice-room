@@ -47,6 +47,61 @@ let audioContext, analyser;
 let speaking = false;
 let audioUnlocked = false;
 
+// ===== Supabase (اگر کانفیگ پر باشد، DB ابری فعال می‌شود) =====
+let supabase = null;
+let supaUserId = null;
+let supaEnabled = false;
+try{
+  if(typeof SUPABASE_URL !== 'undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR_PROJECT') && typeof SUPABASE_ANON_KEY !== 'undefined' && SUPABASE_ANON_KEY.includes('eyJ')){
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    supaEnabled = true;
+    console.log('✅ Supabase enabled', SUPABASE_URL);
+  } else {
+    console.log('ℹ️ Supabase disabled - PeerJS only mode');
+  }
+}catch(e){ console.warn('supabase init fail',e); }
+
+async function supaEnsureUser(name){
+  if(!supaEnabled) return null;
+  try{
+    supaUserId = 'u-' + Math.random().toString(36).slice(2,9);
+    const { error } = await supabase.from('users').insert({ id: supaUserId, name });
+    if(error) console.warn('supa user insert',error);
+    return supaUserId;
+  }catch(e){ console.warn(e); return null; }
+}
+async function supaCreateRoom(id, name){
+  if(!supaEnabled) return;
+  try{ await supabase.from('rooms').insert({ id, name, created_by: supaUserId }); }catch(e){}
+}
+async function supaJoinRoom(roomId){
+  if(!supaEnabled || !supaUserId) return;
+  try{ await supabase.from('room_members').insert({ room_id: roomId, user_id: supaUserId }); }catch(e){}
+}
+async function supaLoadMessages(roomId){
+  if(!supaEnabled) return [];
+  const { data } = await supabase.from('messages').select('*').eq('room_id', roomId).order('created_at',{ascending:true}).limit(200);
+  return data||[];
+}
+async function supaSendMessage(roomId, text){
+  if(!supaEnabled) return;
+  const id = 'm-'+Date.now()+Math.random().toString(36).slice(2,6);
+  await supabase.from('messages').insert({ id, room_id: roomId, user_id: supaUserId, user_name: myName, text });
+}
+async function supaLogScreen(roomId, action){
+  if(!supaEnabled) return;
+  const id='s-'+Date.now()+Math.random().toString(36).slice(2,6);
+  await supabase.from('screen_logs').insert({ id, room_id: roomId, user_id: supaUserId, user_name: myName, action });
+}
+function supaSubscribeMessages(roomId){
+  if(!supaEnabled) return;
+  supabase.channel('messages-'+roomId).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`room_id=eq.${roomId}`}, payload=>{
+    const m = payload.new;
+    if(m.user_id===supaUserId) return; // خودم قبلاً اضافه کردم
+    addChatMessage(m.user_name, m.text, false, false);
+  }).subscribe();
+}
+
 function genId(){ return 'v-' + Math.random().toString(36).slice(2,6) + '-' + Math.random().toString(36).slice(2,6); }
 function toast(msg){ toastGlobal.textContent = msg; toastGlobal.classList.add('show'); setTimeout(()=>toastGlobal.classList.remove('show'),2600); console.log('[toast]',msg); }
 function showCopyToast(){ copyToast.classList.add('show'); setTimeout(()=>copyToast.classList.remove('show'),1400); }
@@ -155,6 +210,19 @@ async function enterRoom(id, isCreator){
   myIdText.textContent = myId;
   myIdBox.classList.remove('hidden');
   history.replaceState(null,'','?room='+encodeURIComponent(isCreator?myId:id));
+  // Supabase: ذخیره کاربر و اتاق
+  if(supaEnabled){
+    await supaEnsureUser(myName);
+    if(isCreator) await supaCreateRoom(id, id);
+    else await supaJoinRoom(id);
+    // لود تاریخچه چت از Supabase
+    const oldMsgs = await supaLoadMessages(id);
+    if(oldMsgs.length){
+      chatBox.innerHTML='';
+      oldMsgs.forEach(m=> addChatMessage(m.user_name, m.text, m.user_id===supaUserId, false));
+    }
+    supaSubscribeMessages(id);
+  }
   // مهم: قبل از Peer حتما میک را بگیر تا صدا قطع نباشد
   await ensureMic();
   unlockAudio();
@@ -167,7 +235,6 @@ async function enterRoom(id, isCreator){
   if(!isCreator){
     toast('در حال اتصال به '+id+' ...');
     await connectToPeer(id);
-    // برای دیباگ: اگر بعد 3 ثانیه هنوز وصل نشد
     setTimeout(()=>{
       if(connections.size===0) toast('وصل نشد — مطمئن شو سازنده آنلاین است و شناسه درست است');
     }, 3500);
@@ -597,6 +664,7 @@ async function toggleScreen(){
       });
       broadcastUpdate(); renderParticipants();
       toast('اشتراک صفحه شروع شد');
+      if(supaEnabled && roomId) supaLogScreen(roomId, 'start');
       vTracks[0].onended = stopScreen;
       screenStream.getTracks().forEach(t=> t.onended = stopScreen);
     }catch(e){
@@ -613,6 +681,7 @@ function stopScreen(){
   addMyScreenCard();
   connections.forEach(e=>{ try{ e.screenCallOut && e.screenCallOut.close(); }catch{} e.screenCallOut=null; });
   broadcastUpdate(); renderParticipants();
+  if(supaEnabled && roomId) supaLogScreen(roomId, 'stop');
 }
 
 function sendChat(){
@@ -620,6 +689,7 @@ function sendChat(){
   if(!txt) return;
   addChatMessage(myName, txt, true);
   broadcastChat(txt);
+  if(supaEnabled && roomId) supaSendMessage(roomId, txt);
   chatInput.value='';
 }
 chatSendBtn.onclick = sendChat;
